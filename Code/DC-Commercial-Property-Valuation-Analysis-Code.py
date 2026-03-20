@@ -1,6 +1,6 @@
 # Title: DC Commercial Property Valuation Analysis
 # Author: Alexander Zakrzeski
-# Date: March 19, 2026
+# Date: March 20, 2026
 
 # Part 1: Setup and Configuration
 
@@ -35,9 +35,8 @@ commercial = (
                pl.col("yr_rmdl").is_null()) &
               pl.col("use_code").is_in([31, 32, 33, 37, 39, 41, 42, 43, 44, 45, 
                                         46, 47, 48, 49, 51, 52, 53, 56, 57, 58,
-                                        59, 61, 62, 63, 65, 66, 67, 68, 69, 71, 
-                                        73, 74, 75, 76, 78, 79, 165, 265, 365, 
-                                        465]))
+                                        59, 61, 63, 66, 67, 68, 69, 71, 73, 74,
+                                        75, 76, 78, 79, 165, 265, 365]))
       .with_columns(
           pl.col("ssl").str.replace_all(r"\s+", " "),
           (pl.col("sale_year") - pl.col("ayb")).alias("age"),
@@ -50,6 +49,40 @@ commercial = (
 
 # Update the commercial DataFrame retaining the relevant records and columns 
 commercial = (
-    commercial.filter(pl.col("sale_num").is_between(1, 6) &
-                      (pl.col("living_gba") > 0))
-    )         
+    commercial.filter((pl.col("price") >= 250_000) & 
+                      pl.col("sale_num").is_between(1, 6) &
+                      (pl.col("living_gba") >= 500) &
+                      (pl.col("land_area") >= 200))
+              .with_columns(
+                  pl.when(pl.col("use_code").is_in([31, 32, 37, 39]))
+                    .then(pl.lit("Hotel"))
+                    .when(pl.col("use_code").is_in([41, 42, 44, 45, 46, 48, 
+                                                    49]))
+                    .then(pl.lit("Retail"))
+                    .when(pl.col("use_code").is_in([51, 52, 53, 56, 57, 58, 
+                                                    59]))
+                    .then(pl.lit("Office"))
+                    .when(pl.col("use_code").is_in([61, 66, 67, 68, 69]))
+                    .then(pl.lit("Specific Purpose"))
+                    .when(pl.col("use_code").is_in([74, 75]))
+                    .then(pl.lit("Industrial"))
+                    .alias("use")
+                  )
+              .drop("use_code")
+    ) 
+
+# Create the addresses DataFrame containing the appropriate records and columns
+addresses = (
+    pl.read_parquet("DC-Address-Points-Data.parquet")
+      .rename(str.lower)
+      .select("ssl", "ward", "latitude", "longitude")
+      .filter(pl.col("ssl").is_not_null())
+      .with_columns(
+          pl.col("ssl").str.replace_all(r"\s+", " "),
+          pl.col("ward").str.strip_prefix("Ward ")         
+          )
+      .unique("ssl")
+    )
+    
+# Update the houses DataFrame by performing an inner join with the DataFrames 
+commercial = commercial.join(addresses, on = "ssl", how = "left")
